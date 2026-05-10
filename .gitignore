@@ -1,0 +1,16 @@
+﻿.venv/
+runs/
+*.cache
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+
+# Сырые фото
+database/raw_photos/
+
+# Тестовые фото
+database/test_photos/
+
+# Вторая модель — вся папка
+database/model_ocr/
