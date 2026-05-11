@@ -3,15 +3,17 @@ import os
 from ultralytics import YOLO
 
 
-model = YOLO("runs/detect/gas_meter_display_v1/weights/best.pt")
+model = YOLO("runs/detect/gas_meter_small_v1/weights/best.pt")
 
-input_folder = "database/model_detect/dataset/images/train"
-output_folder = 'database/model_ocr/digits_images'
-photos = [f for f in os.listdir(input_folder) if f.endswith(('.jpeg', '.jpg')) ]
-os.makedirs(output_folder, exist_ok=True)
+INPUT_PATH = "database/raw_photos"
+OUTPUT_PATH = 'database/model_ocr/digits_images' # папка для сохранения обрезанных изображений дисплея
+
+
+photos = [f for f in os.listdir(INPUT_PATH) if f.endswith(('.jpeg', '.jpg')) ]
+os.makedirs(OUTPUT_PATH, exist_ok=True)
 
 for photo in photos:
-    path = os.path.join(input_folder, photo)
+    path = os.path.join(INPUT_PATH, photo)
 
     results = model(path, conf=0.5)
     result = results[0]
@@ -33,7 +35,7 @@ for photo in photos:
         img = img[y1:y2, x1:x2]
 
         # Сохраняем
-        out_path = os.path.join(output_folder, photo)
+        out_path = os.path.join(OUTPUT_PATH, photo)
         cv2.imwrite(out_path, img)
     else:
         print("Дисплей не найден!")

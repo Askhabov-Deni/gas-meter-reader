@@ -9,9 +9,12 @@ __pycache__/
 
 # Сырые фото
 database/raw_photos/
+database/images_to_label/
 
 # Тестовые фото
 database/test_photos/
 
 # Вторая модель — вся папка
 database/model_ocr/
+
+out_put/
