@@ -3,11 +3,11 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt") 
 
 model.train(
-    data="dataset/data.yaml",
+    data="database/model_detect_id/dataset/data.yaml",
     epochs=100,
     imgsz=640,
     batch=16,
-    name="gas_meter_display_v1",
+    name="gas_meter_nano_v1",
     patience=20,          # early stopping
     augment=True,
     degrees=5,            # поворот 

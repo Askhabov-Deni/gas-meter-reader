@@ -8,8 +8,7 @@ __pycache__/
 .vscode/
 
 # Сырые фото
-database/raw_photos/
-database/images_to_label/
+database/
 
 # Тестовые фото
 database/test_photos/
