@@ -1,88 +1,176 @@
 import cv2
 import os
+import colorsys
+import random
 from ultralytics import YOLO
 
 
-IMG_FOLDER_PATH = 'database/raw_photos' # путь к папке  с фотографиями для теста
+IMG_FOLDER_PATH = 'database/raw_photos'
+SHOW_LABELS = True  # Включить/выключить надписи над объектами
+
+MODEL_PATHS = [
+    "runs/detect/gas_meter_all_classes_m_v1/weights/best.pt",
+    "runs/detect/gas_meter_all_classes_s_v1/weights/best.pt",
+]
 
 
-model_nano = YOLO("runs/detect/gas_meter_nano_v1/weights/best.pt")
-model_small = YOLO("runs/detect/gas_meter_small_v1/weights/best.pt")
-model_medium = YOLO("runs/detect/gas_meter_medium_v1/weights/best.pt")
+
+def generate_distinct_colors(n: int) -> list[tuple[int, int, int]]:
+    """Генерирует n визуально различимых цветов через равномерное распределение по HSV."""
+    colors = []
+    hue_start = random.random()
+    for i in range(n):
+        hue = (hue_start + i / n) % 1.0
+        saturation = 0.85 + random.uniform(-0.1, 0.1)
+        value = 0.95 + random.uniform(-0.05, 0.05)
+        r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+        colors.append((int(b * 255), int(g * 255), int(r * 255)))  # BGR для OpenCV
+    return colors
 
 
-models = {
-    "nano":  {"model": model_nano, "color": (0, 0, 255)},    # красный
-    "small": {"model": model_small, "color": (255, 0, 0)},    # синий
-    "medium":{"model": model_medium, "color": (0, 255, 0)},    # зелёный
-}
+def load_models(paths: list[str]) -> dict:
+    """Загружает модели и назначает каждой уникальный цвет."""
+    colors = generate_distinct_colors(len(paths))
+    models = {}
+    for path, color in zip(paths, colors):
+        name = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        model = YOLO(path)
+        class_names = model.names  #
+        models[name] = {
+            "model": model,
+            "color": color,
+            "class_names": class_names,
+        }
+        print(f"  Загружена модель '{name}'  цвет BGR: {color}")
+    return models
 
 
-def detect_display(model, path, conf=0.5): # функция для обнаружения дисплея на фотографии, возвращает координаты рамки и уверенность
-    results = model(path, conf=conf)
+def detect_all(model, path: str, conf_thresh: float = 0.5) -> list[dict]:
+    """Возвращает ВСЕ найденные объекты на изображении.
+    Всегда возвращает list (пустой если ничего не найдено), никогда None.
+    """
+    results = model(path, conf=conf_thresh)
     result = results[0]
-    
-    if result.boxes is not None and len(result.boxes) > 0:
-            boxes = result.boxes
-            
-            # Самая уверенная рамка
-            best_idx = boxes.conf.argmax()
-            box = boxes.xyxy[best_idx].cpu().numpy()
-            conf = boxes.conf[best_idx].item()
-            
-            x1, y1, x2, y2 = map(int, box)
+    detections = []
 
-            return (x1, y1, x2, y2), conf
-    else:
-        print("Дисплей не найден!")
-        return None, None
+    if result.boxes is None or len(result.boxes) == 0:
+        return detections
+
+    for box, conf, cls in zip(
+        result.boxes.xyxy,
+        result.boxes.conf,
+        result.boxes.cls,
+    ):
+        x1, y1, x2, y2 = map(int, box.cpu().numpy())
+        detections.append({
+            "coords": (x1, y1, x2, y2),
+            "conf": conf.item(),
+            "class_id": int(cls.item()),
+        })
+
+    return detections
 
 
-photos = [f for f in os.listdir(IMG_FOLDER_PATH) if f.endswith(('.jpeg', '.jpg')) ]  # Получаем список всех фотографий в папке для теста
+def draw_detections(img, detections: list[dict], color: tuple,
+                    class_names: dict, show_labels: bool = True) -> None:
+    for det in detections:
+        x1, y1, x2, y2 = det["coords"]
+        conf = det["conf"]
+        cls_id = det["class_id"]
 
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+        if show_labels:
+            label = f"{class_names.get(cls_id, str(cls_id))} {conf:.2f}"
+            (tw, th), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
+            )
+            # Фон под текстом в цвет модели
+            cv2.rectangle(
+                img,
+                (x1, y1 - th - baseline - 4),
+                (x1 + tw + 4, y1),
+                color, -1,
+            )
+            cv2.putText(
+                img, label,
+                (x1 + 2, y1 - baseline - 2),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                (255, 255, 255), 1, cv2.LINE_AA,
+            )
+
+
+def draw_legend(img, models: dict, padding: int = 8, line_height: int = 28) -> None:
+    """Рисует полупрозрачную легенду в левом верхнем углу."""
+    n = len(models)
+    box_w = 300
+    box_h = padding * 2 + n * line_height
+
+    overlay = img.copy()
+    cv2.rectangle(overlay, (5, 5), (5 + box_w, 5 + box_h), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
+
+    for idx, (name, info) in enumerate(models.items()):
+        y = 5 + padding + idx * line_height + line_height // 2
+        color = info["color"]
+
+        # Цветной прямоугольник-образец
+        cv2.rectangle(img, (12, y - 8), (32, y + 8), color, -1)
+
+        cv2.putText(
+            img, name,
+            (40, y + 5),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+            color, 1, cv2.LINE_AA,
+        )
+
+
+print("Загружаем модели...")
+models = load_models(MODEL_PATHS)
+
+photos = [
+    f for f in os.listdir(IMG_FOLDER_PATH)
+    if f.lower().endswith(('.jpeg', '.jpg', '.png'))
+]
 len_photos = len(photos)
-print(f"Найдено {len_photos} фотографий для теста.")
+print(f"\nНайдено {len_photos} фотографий. Тестируем начиная с 1000-й.\n")
 
-for i in range(1000, len_photos):   # модели обочно обучаются на 1000 фотографиях, поэтому тестируем с 1000ой
+# ── Главный цикл ──────────────────────────────────────────────────────────────
+for i in range(1000, len_photos):
     photo = photos[i]
     path = os.path.join(IMG_FOLDER_PATH, photo)
     img = cv2.imread(path)
 
-    print(f"\nТестируем фотографию {i+1}/{len_photos}: {photo}")
+    print(f"\nФото {i + 1}/{len_photos}: {photo}")
 
-    for model in models.values():
-        coords, conf = detect_display(model["model"], path)
-        
-        if coords is not None:
-            x1, y1, x2, y2 = coords
-            print(f"Дисплей найден! Уверенность: {conf:.3f}")
-            print(f"Координаты: ({x1}, {y1})  ({x2}, {y2})")
-            cv2.rectangle(img, (x1, y1), (x2, y2), model["color"], 2)
+    for name, info in models.items():
+        detections = detect_all(info["model"], path)
+
+        if detections:
+            print(f"  [{name}] найдено объектов: {len(detections)}")
+            for det in detections:
+                cls_name = info["class_names"].get(det["class_id"], str(det["class_id"]))
+                print(f"    - {cls_name}: conf={det['conf']:.3f}  coords={det['coords']}")
         else:
-            print("Дисплей не найден!")
-        
-        
-        cv2.rectangle(img, (x1, y1), (x2, y2), model["color"], 1)
-        
+            print(f"  [{name}] ничего не найдено")
 
-    cv2.rectangle(img, (5, 5), (250, 95), (10,10,10), -1)
+        draw_detections(img, detections, info["color"], info["class_names"], SHOW_LABELS)
 
-    # Надписи
-    cv2.putText(img, "red - nano",  (15, 30), cv2.FONT_HERSHEY_COMPLEX, 0.6, (30, 30, 200), 2)
-    cv2.putText(img, "blue - small", (15, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (200, 30, 30), 2)
-    cv2.putText(img, "green - medium", (15, 80), cv2.FONT_HERSHEY_DUPLEX, 0.6, (30, 200, 30), 2)
-    
-    # Подсказка
-    cv2.putText(img, "ESC - exit | SPACE - next", (5, img.shape[0] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    draw_legend(img, models)
 
-    img = cv2.resize(img, None, fx=1, fy=1)
+    # Подсказка снизу
+    cv2.putText(
+        img, "ESC - exit  | any key - next",
+        (5, img.shape[0] - 8),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+        (220, 220, 220), 1, cv2.LINE_AA,
+    )
+
     cv2.imshow(photo, img)
-    
+
     key = cv2.waitKey(0)
-    if key == 27:  # ESC
-        print("\nВыход по ESC.")
-        break
-
-
     cv2.destroyAllWindows()
+
+    if key == 27:  # ESC
+        print("\nВыход.")
+        break
