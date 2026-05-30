@@ -8,10 +8,8 @@ from ultralytics import YOLO
 IMG_FOLDER_PATH = 'database/raw_photos'
 SHOW_LABELS = True  # Включить/выключить надписи над объектами
 
-MODEL_PATHS = [
-    "runs/detect/gas_meter_all_classes_m_v1/weights/best.pt",
-    "runs/detect/gas_meter_all_classes_s_v1/weights/best.pt",
-]
+MODEL_PATHS = ["runs/detect/gas_meter_all_classes_s_v1/weights/best.pt"] # список моделей для теста
+
 
 
 
