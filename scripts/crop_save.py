@@ -133,11 +133,8 @@ def main():
     print("=" * 50)
     
     total = {}
-    i = 0
+    
     for photo in photos:
-        i += 1
-        if i == 10:
-            break 
         stats = process_one_image(photo)
         for cls_name, count in stats.items():
             total[cls_name] = total.get(cls_name, 0) + count
